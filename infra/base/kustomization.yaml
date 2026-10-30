@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: canchas
+resources:
+  - namespace.yaml
+  - limites.yaml
+  - postgres.yaml
+  - mongo.yaml
+  - backend.yaml
+  - migracion-job.yaml
+  - ingress.yaml

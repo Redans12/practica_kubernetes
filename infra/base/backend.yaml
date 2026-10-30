@@ -1,0 +1,100 @@
+# Backend FastAPI: sin estado local, sondas separadas, contenedor endurecido.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: canchas-backend
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: canchas-config
+data:
+  MONGO_DB: canchas
+  ACCESS_TOKEN_MINUTES: "30"
+  LOGIN_MAX_INTENTOS: "5"
+  LOGIN_BLOQUEO_MINUTOS: "15"
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "5"
+  CORS_ORIGINS: ""
+  DIAG_REPLICA_ENABLED: "false"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canchas-backend
+  labels: {app: canchas-backend}
+spec:
+  type: ClusterIP
+  selector: {app: canchas-backend}
+  ports:
+    - {name: http, port: 8000, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: canchas-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: canchas-backend}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  template:
+    metadata:
+      labels: {app: canchas-backend, tier: app}
+    spec:
+      serviceAccountName: canchas-backend
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: canchas-backend   # lo sustituye "images:" del overlay (ghcr.io/... con etiqueta fija)
+          ports:
+            - {name: http, containerPort: 8000}
+          envFrom:
+            - configMapRef: {name: canchas-config}
+          env:
+            # El orden importa: $(VAR) solo expande variables definidas antes.
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: postgres-secret, key: APP_PASSWORD}}
+            - name: DATABASE_URL
+              value: postgresql+psycopg://canchas_app:$(DB_PASSWORD)@postgres:5432/canchas
+            - name: MONGO_PASSWORD
+              valueFrom: {secretKeyRef: {name: mongo-secret, key: MONGO_APP_PASSWORD}}
+            - name: MONGO_URL
+              value: mongodb://canchas_app:$(MONGO_PASSWORD)@mongo:27017/canchas?authSource=canchas
+            - name: JWT_SECRET
+              valueFrom: {secretKeyRef: {name: app-secret, key: JWT_SECRET}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          # La liveness NO consulta las bases: una caída temporal de una BD no debe reiniciar los Pods.
+          startupProbe:
+            httpGet: {path: /health/live, port: http}
+            periodSeconds: 3
+            failureThreshold: 20
+          readinessProbe:
+            httpGet: {path: /health/ready, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /health/live, port: http}
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {}

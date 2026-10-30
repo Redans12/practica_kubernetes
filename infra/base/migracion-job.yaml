@@ -1,0 +1,50 @@
+# Migraciones: UN solo Job (nunca una por réplica del backend), con la cuenta migradora.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrar
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels: {app: canchas-migrar, tier: app}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: canchas-backend
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: esperar-postgres
+          image: postgres:16
+          command: ["sh", "-c", "until pg_isready -h postgres -p 5432; do echo esperando a postgres; sleep 3; done"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+      containers:
+        - name: alembic
+          image: canchas-backend
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: MIGRADOR_PASSWORD
+              valueFrom: {secretKeyRef: {name: postgres-secret, key: MIGRADOR_PASSWORD}}
+            - name: MIGRATION_DATABASE_URL
+              value: postgresql+psycopg://canchas_migrador:$(MIGRADOR_PASSWORD)@postgres:5432/canchas
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 300m, memory: 256Mi}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,5 @@
+# Los scripts y manifiestos deben conservar saltos de línea LF (se ejecutan en Linux)
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.py text eol=lf

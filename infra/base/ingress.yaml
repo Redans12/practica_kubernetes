@@ -1,0 +1,50 @@
+# Entrada HTTP/HTTPS con Traefik (el que trae k3s). El host real lo fija cada overlay.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirigir-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# Puerto 80: solo redirige a HTTPS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: canchas-http
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: canchas-redirigir-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: canchas.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: canchas-backend, port: {number: 8000}}
+---
+# Puerto 443: TLS, solo /api llega al backend
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: canchas-https
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [canchas.local]
+      secretName: canchas-tls
+  rules:
+    - host: canchas.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service: {name: canchas-backend, port: {number: 8000}}

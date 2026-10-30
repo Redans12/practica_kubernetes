@@ -15,7 +15,10 @@ log = logging.getLogger("canchas")
 REPLICA = socket.gethostname()
 
 settings = get_settings()
-app = FastAPI(title="Gestión de canchas deportivas", version="0.1.0")
+app = FastAPI(
+    title="Gestión de canchas deportivas", version="0.1.0",
+    docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None,
+)
 
 origenes = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 if origenes:
@@ -43,5 +46,7 @@ async def registrar_peticion(request: Request, call_next):
     return response
 
 
+# /health/* lo usan las sondas de Kubernetes (no se publica por el Ingress).
+# Todo lo demás vive bajo /api, que es lo único que expone el Ingress.
 app.include_router(health.router)
-app.include_router(auth.router)
+app.include_router(auth.router, prefix="/api")

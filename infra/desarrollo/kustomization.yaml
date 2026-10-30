@@ -1,0 +1,21 @@
+# Ambiente de DESARROLLO: 1 nodo, 1 réplica por capa, escalado manual.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+images:
+  - name: canchas-backend
+    newName: ghcr.io/redans12/canchas-backend
+    newTag: sha-CAMBIAR   # lo fija infra/scripts/desplegar.sh
+patches:
+  - target: {kind: Ingress, name: canchas-http}
+    patch: |-
+      - {op: replace, path: /spec/rules/0/host, value: canchas-dev.lab}
+  - target: {kind: Ingress, name: canchas-https}
+    patch: |-
+      - {op: replace, path: /spec/rules/0/host, value: canchas-dev.lab}
+      - {op: replace, path: /spec/tls/0/hosts/0, value: canchas-dev.lab}
+  - target: {kind: ConfigMap, name: canchas-config}
+    patch: |-
+      - {op: replace, path: /data/CORS_ORIGINS, value: "https://canchas-dev.lab"}
+      - {op: replace, path: /data/DIAG_REPLICA_ENABLED, value: "true"}

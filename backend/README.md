@@ -5,7 +5,7 @@
 copy .env.example .env        # edita .env: contraseñas y JWT_SECRET
 docker compose up --build
 ```
-- API y documentación interactiva: http://127.0.0.1:8000/docs
+- API y documentación interactiva: http://127.0.0.1:8000/api/docs
 - Salud: http://127.0.0.1:8000/health/live y /health/ready
 
 ## Ejecutar las pruebas

@@ -1,0 +1,24 @@
+# Cuotas y valores por defecto para que ningún Pod consuma sin límite.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: cuota-canchas
+spec:
+  hard:
+    pods: "20"
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 3Gi
+    persistentvolumeclaims: "6"
+    requests.storage: 20Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limites-por-defecto
+spec:
+  limits:
+    - type: Container
+      defaultRequest: {cpu: 50m, memory: 64Mi}
+      default: {cpu: 500m, memory: 256Mi}

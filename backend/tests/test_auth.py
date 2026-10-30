@@ -14,11 +14,11 @@ DATOS = {"email": "ana@ejemplo.test", "nombre": "Ana Pérez", "password": "clave
 
 
 def _registrar(client, **extra):
-    return client.post("/auth/registro", json={**DATOS, **extra})
+    return client.post("/api/auth/registro", json={**DATOS, **extra})
 
 
 def _token(client, email=DATOS["email"], password=DATOS["password"]):
-    r = client.post("/auth/login", json={"email": email, "password": password})
+    r = client.post("/api/auth/login", json={"email": email, "password": password})
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
 
@@ -57,14 +57,14 @@ def test_registro_no_permite_elegir_rol(client):
 def test_login_correcto_y_perfil(client):
     _registrar(client)
     token = _token(client)
-    r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200 and r.json()["email"] == DATOS["email"]
 
 
 def test_login_password_incorrecta_y_usuario_inexistente_responden_igual(client):
     _registrar(client)
-    a = client.post("/auth/login", json={"email": DATOS["email"], "password": "otra-clave-xyz"})
-    b = client.post("/auth/login", json={"email": "nadie@ejemplo.test", "password": "otra-clave-xyz"})
+    a = client.post("/api/auth/login", json={"email": DATOS["email"], "password": "otra-clave-xyz"})
+    b = client.post("/api/auth/login", json={"email": "nadie@ejemplo.test", "password": "otra-clave-xyz"})
     assert a.status_code == b.status_code == 401
     assert a.json() == b.json()
 
@@ -73,41 +73,41 @@ def test_bloqueo_tras_intentos_fallidos_aunque_luego_use_la_clave_correcta(clien
     _registrar(client)
     maximo = get_settings().login_max_intentos
     for _ in range(maximo):
-        assert client.post("/auth/login", json={"email": DATOS["email"], "password": "mala-clave-000"}).status_code == 401
-    r = client.post("/auth/login", json={"email": DATOS["email"], "password": DATOS["password"]})
+        assert client.post("/api/auth/login", json={"email": DATOS["email"], "password": "mala-clave-000"}).status_code == 401
+    r = client.post("/api/auth/login", json={"email": DATOS["email"], "password": DATOS["password"]})
     assert r.status_code == 429
     assert int(r.headers["Retry-After"]) > 0
 
 
 def test_sin_token_401(client):
-    assert client.get("/auth/me").status_code == 401
+    assert client.get("/api/auth/me").status_code == 401
 
 
 def test_token_invalido_401(client):
-    r = client.get("/auth/me", headers={"Authorization": "Bearer basura"})
+    r = client.get("/api/auth/me", headers={"Authorization": "Bearer basura"})
     assert r.status_code == 401
 
 
 def test_sesion_expirada_401(client):
     _registrar(client)
-    me = client.get("/auth/me", headers={"Authorization": f"Bearer {_token(client)}"}).json()
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {_token(client)}"}).json()
     s = get_settings()
     vencido = jwt.encode(
         {"sub": me["id"], "rol": "jugador", "exp": datetime.now(timezone.utc) - timedelta(minutes=1)},
         s.jwt_secret, algorithm=s.jwt_algorithm,
     )
-    r = client.get("/auth/me", headers={"Authorization": f"Bearer {vencido}"})
+    r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {vencido}"})
     assert r.status_code == 401 and r.json()["detail"] == "Sesión expirada"
 
 
 def test_token_firmado_con_otra_clave_401(client):
     _registrar(client)
-    me = client.get("/auth/me", headers={"Authorization": f"Bearer {_token(client)}"}).json()
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {_token(client)}"}).json()
     falso = jwt.encode(
         {"sub": me["id"], "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
         "x" * 40, algorithm="HS256",
     )
-    assert client.get("/auth/me", headers={"Authorization": f"Bearer {falso}"}).status_code == 401
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {falso}"}).status_code == 401
 
 
 def test_usuario_sin_permisos_403_y_administrador_200(client, db):
@@ -131,7 +131,7 @@ def test_el_rol_se_toma_de_la_bd_no_del_token(client, db):
     if not any(getattr(r, "path", None) == ruta for r in app.routes):
         app.add_api_route(ruta, lambda: {"ok": True}, dependencies=[Depends(require_rol("administrador"))])
     _registrar(client)
-    me = client.get("/auth/me", headers={"Authorization": f"Bearer {_token(client)}"}).json()
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {_token(client)}"}).json()
     s = get_settings()
     mentiroso = jwt.encode(
         {"sub": me["id"], "rol": "administrador", "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
