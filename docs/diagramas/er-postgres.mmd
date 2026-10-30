@@ -1,0 +1,87 @@
+erDiagram
+    USUARIO ||--o{ RESERVA : "realiza"
+    CANCHA  ||--o{ RESERVA : "se reserva en"
+    RESERVA ||--o{ RESERVA_MATERIAL : "renta"
+    MATERIAL ||--o{ RESERVA_MATERIAL : "se renta en"
+    RESERVA ||--o{ PAGO : "genera"
+    RESERVA ||--o{ RESERVA_JUGADOR : "tiene jugadores"
+    USUARIO ||--o{ RESERVA_JUGADOR : "participa"
+    CANCHA  ||--o{ LISTA_ESPERA : "espera turno en"
+    USUARIO ||--o{ LISTA_ESPERA : "se anota"
+
+    USUARIO {
+        uuid id PK
+        varchar email UK
+        varchar nombre
+        varchar password_hash
+        varchar rol "jugador | administrador"
+        int ranking_puntos
+        timestamptz bloqueado_hasta "regla 1"
+        int intentos_fallidos "limite de login"
+        timestamptz login_bloqueado_hasta
+        boolean activo
+        timestamptz creado_en
+    }
+    CANCHA {
+        uuid id PK
+        varchar nombre UK
+        varchar deporte "padel | futbol7 | tenis"
+        numeric tarifa_hora "mayor a 0"
+        numeric deposito
+        boolean activa "baja logica"
+        timestamptz creado_en
+    }
+    MATERIAL {
+        uuid id PK
+        varchar nombre UK
+        varchar tipo
+        int cantidad_total "mayor o igual a 0"
+        numeric precio_renta
+        boolean activo "baja logica"
+    }
+    RESERVA {
+        uuid id PK
+        uuid usuario_id FK
+        uuid cancha_id FK
+        tstzrange periodo "EXCLUDE gist regla 4"
+        varchar estado
+        boolean es_partido_abierto
+        numeric deposito
+        numeric penalizacion
+        timestamptz expira_en "solo borrador"
+        timestamptz creado_en
+        timestamptz actualizado_en
+    }
+    RESERVA_MATERIAL {
+        uuid reserva_id PK,FK
+        uuid material_id PK,FK
+        int cantidad "mayor a 0"
+    }
+    PAGO {
+        uuid id PK
+        uuid reserva_id FK
+        varchar tipo "deposito | penalizacion"
+        numeric monto "mayor a 0"
+        varchar estado "simulado"
+        timestamptz creado_en
+    }
+    RESERVA_JUGADOR {
+        uuid reserva_id PK,FK
+        uuid usuario_id PK,FK
+        boolean confirmado
+    }
+    LISTA_ESPERA {
+        uuid id PK
+        uuid cancha_id FK
+        tstzrange periodo
+        uuid usuario_id FK
+        timestamptz creado_en
+    }
+    OUTBOX_EVENTO {
+        uuid id PK
+        varchar tipo
+        jsonb payload
+        timestamptz creado_en
+        timestamptz procesado_en "NULL = pendiente"
+        int intentos
+    }

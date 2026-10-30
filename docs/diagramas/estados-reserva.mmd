@@ -1,0 +1,12 @@
+stateDiagram-v2
+    [*] --> borrador
+    borrador --> confirmada : pago (y quorum si es partido abierto) - Regla 2
+    borrador --> expirada : expira_en vencido (CronJob)
+    confirmada --> en_juego : check-in - Regla 3 (luz)
+    en_juego --> completada : fin del turno (actualiza ranking)
+    confirmada --> liberada_espera : cancelacion o no-show - Regla 1
+    confirmada --> liberada_espera : quorum incompleto 2 h antes - Regla 2
+    liberada_espera --> reasignada : alguien en espera toma el turno - Regla 4
+    completada --> [*]
+    reasignada --> [*]
+    expirada --> [*]

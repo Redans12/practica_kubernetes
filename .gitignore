@@ -1,0 +1,25 @@
+# Secretos y credenciales: NUNCA al repositorio
+.env
+*.env
+!.env.example
+*.pem
+*.key
+kubeconfig*
+*.kubeconfig
+secrets/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Respaldos y volcados con datos
+*.dump
+*.sql.gz
+*.archive
