@@ -1,0 +1,73 @@
+# Ambiente de PRODUCCIÓN (laboratorio): 1 control plane + 2 workers, 2 réplicas del backend,
+# HPA de 2 a 6, NetworkPolicy con bloqueo por defecto, RBAC, PDB y volúmenes con política Retain.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: canchas
+resources:
+  - ../base
+  - almacenamiento.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - red.yaml
+  - rbac.yaml
+images:
+  - name: canchas-backend
+    newName: ghcr.io/redans12/canchas-backend
+    digest: sha256:CAMBIAR   # lo fija infra/scripts/desplegar-prod.sh (producción usa digest, no etiqueta)
+patches:
+  # ---- entrada: otro host y su propio certificado
+  - target: {kind: Ingress, name: canchas-http}
+    patch: |-
+      - {op: replace, path: /spec/rules/0/host, value: canchas-prod.lab}
+  - target: {kind: Ingress, name: canchas-https}
+    patch: |-
+      - {op: replace, path: /spec/rules/0/host, value: canchas-prod.lab}
+      - {op: replace, path: /spec/tls/0/hosts/0, value: canchas-prod.lab}
+  - target: {kind: ConfigMap, name: canchas-config}
+    patch: |-
+      - {op: replace, path: /data/CORS_ORIGINS, value: "https://canchas-prod.lab"}
+      # Solo para demostrar el balanceo entre réplicas. APAGAR ("false") al terminar las pruebas.
+      - {op: replace, path: /data/DIAG_REPLICA_ENABLED, value: "true"}
+  # ---- backend: 2+ réplicas (las controla el HPA), repartidas entre workers
+  - target: {kind: Deployment, name: canchas-backend}
+    patch: |-
+      - {op: remove, path: /spec/replicas}          # el HPA manda; así un "apply" no lo reinicia a un número fijo
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}   # fuera del control plane
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: DoNotSchedule
+            nodeTaintsPolicy: Honor   # un nodo en "drain" deja de contar como destino (si no, el Pod nuevo queda Pending)
+            labelSelector: {matchLabels: {app: canchas-backend}}
+  # ---- bases de datos: datos en el worker 1 (volumen local), con política Retain
+  - target: {kind: StatefulSet, name: postgres}
+    patch: |-
+      - {op: add, path: /spec/template/spec/nodeSelector, value: {kubernetes.io/hostname: k8s-prod-w1}}
+      - {op: replace, path: /spec/volumeClaimTemplates/0/spec/storageClassName, value: local-path-retain}
+  - target: {kind: StatefulSet, name: mongo}
+    patch: |-
+      - {op: add, path: /spec/template/spec/nodeSelector, value: {kubernetes.io/hostname: k8s-prod-w1}}
+      - {op: replace, path: /spec/volumeClaimTemplates/0/spec/storageClassName, value: local-path-retain}
+  # ---- cuota más amplia: el HPA puede llegar a 6 réplicas
+  - patch: |-
+      apiVersion: v1
+      kind: ResourceQuota
+      metadata: {name: cuota-canchas}
+      spec:
+        hard:
+          pods: "40"
+          requests.cpu: "3"
+          requests.memory: 4Gi
+          limits.cpu: "8"
+          limits.memory: 6Gi
+          persistentvolumeclaims: "6"
+          requests.storage: 20Gi

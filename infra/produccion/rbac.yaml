@@ -1,0 +1,71 @@
+# RBAC de mínimo privilegio. El Pod del backend NO tiene permisos en la API de Kubernetes
+# (su ServiceAccount no tiene Role y no monta token). Para las personas hay dos perfiles:
+#   auditor  -> solo lectura (sin Secrets)
+#   operador -> puede escalar, reiniciar y borrar Pods; sin acceso a Secrets ni a RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: auditor}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: operador}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: solo-lectura}
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, configmaps, events, persistentvolumeclaims, resourcequotas]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: operador-despliegue}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+  - apiGroups: [apps]
+    resources: [deployments, deployments/scale]
+    verbs: [patch, update]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: auditor-solo-lectura}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: solo-lectura}
+subjects:
+  - {kind: ServiceAccount, name: auditor}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: operador-solo-lectura}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: solo-lectura}
+subjects:
+  - {kind: ServiceAccount, name: operador}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: operador-despliegue}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: operador-despliegue}
+subjects:
+  - {kind: ServiceAccount, name: operador}

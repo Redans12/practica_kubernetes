@@ -1,0 +1,80 @@
+# NetworkPolicy: se bloquea todo por defecto y se abre solo lo necesario.
+#   Internet -> Traefik -> backend -> PostgreSQL / MongoDB.   Nada más se habla con nada más.
+# (k3s trae su propio controlador de NetworkPolicy; se comprueba con las pruebas de la guía.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: denegar-todo
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: permitir-dns
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# Traefik (kube-system) puede llamar al backend, y solo en su puerto
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: traefik-a-backend
+spec:
+  podSelector:
+    matchLabels: {app: canchas-backend}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports:
+        - {protocol: TCP, port: 8000}
+---
+# Los Pods de la aplicación (backend, migraciones, tareas, semilla) pueden salir solo hacia las bases de datos
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: app-a-datos
+spec:
+  podSelector:
+    matchLabels: {tier: app}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app: postgres}}
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - podSelector: {matchLabels: {app: mongo}}
+      ports:
+        - {protocol: TCP, port: 27017}
+---
+# Las bases de datos aceptan conexiones solo de la aplicación
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: datos-desde-app
+spec:
+  podSelector:
+    matchLabels: {tier: datos}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {tier: app}}
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 27017}

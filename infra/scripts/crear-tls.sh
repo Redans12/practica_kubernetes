@@ -3,6 +3,7 @@
 # La CA y las llaves quedan en ~/pki (FUERA del repositorio). Importa ca.crt en Windows para que
 # el navegador confíe en el certificado.
 # Uso:  ./crear-tls.sh canchas-dev.lab
+#       CA_CN="Canchas Lab CA Prod" ./crear-tls.sh canchas-prod.lab   (CA propia para otro cluster)
 set -euo pipefail
 HOST="${1:?Indica el nombre de host, por ejemplo canchas-dev.lab}"
 NS="${2:-canchas}"
@@ -12,7 +13,7 @@ mkdir -p "$PKI" && chmod 700 "$PKI"
 if [ ! -f "$PKI/ca.crt" ]; then
   openssl req -x509 -newkey rsa:4096 -nodes -days 365 \
     -keyout "$PKI/ca.key" -out "$PKI/ca.crt" \
-    -subj "/CN=Canchas Lab CA" \
+    -subj "/CN=${CA_CN:-Canchas Lab CA}" \
     -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
   chmod 600 "$PKI/ca.key"
 fi

@@ -20,7 +20,9 @@ spec:
       initContainers:
         - name: esperar-postgres
           image: postgres:16
-          command: ["sh", "-c", "until pg_isready -h postgres -p 5432; do echo esperando a postgres; sleep 3; done"]
+          # -U es obligatorio: el UID 10001 no existe en /etc/passwd de esta imagen y sin usuario
+          # pg_isready responde "no attempt" sin intentar conectar.
+          command: ["sh", "-c", "until pg_isready -h postgres -p 5432 -U postgres; do echo esperando a postgres; sleep 3; done"]
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: ["ALL"]}

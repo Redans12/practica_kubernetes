@@ -1,0 +1,9 @@
+# Durante un "drain" o una actualización, siempre queda al menos 1 réplica del backend atendiendo.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: canchas-backend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: canchas-backend}

@@ -1,0 +1,21 @@
+# Autoescalado del backend: entre 2 y 6 réplicas, objetivo 60 % de la CPU solicitada (100m por Pod).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: canchas-backend
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: canchas-backend}
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 60}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - {type: Pods, value: 2, periodSeconds: 30}
+    scaleDown:
+      stabilizationWindowSeconds: 300   # evita "aletear": baja solo tras 5 min estable
