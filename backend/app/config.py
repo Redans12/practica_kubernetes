@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 5
 
+    # Reglas de negocio
+    zona_horaria: str = "America/Mexico_City"   # para el horario estelar (18:00 a 22:00, lunes a viernes)
+    borrador_minutos: int = 10                  # un borrador bloquea el turno este tiempo
+
     # CORS: orígenes permitidos separados por coma (vacío = ninguno)
     cors_origins: str = ""
 

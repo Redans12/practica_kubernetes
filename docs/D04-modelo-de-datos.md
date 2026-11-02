@@ -2,7 +2,7 @@
 
 **Proyecto:** Gestión de canchas deportivas (pádel, fútbol 7 y tenis)
 **Alumno:** Andres · No. de control 22121298 · Infraestructura de Servicios · Instituto Tecnológico de Morelia
-**Estado:** v0.2 · modelo aprobado el 26-oct-2026 · PostgreSQL implementado en `backend/` (migración `0001`, probada)
+**Estado:** v0.3 · modelo aprobado el 26-oct-2026 · implementado en `backend/` (migraciones `0001` y `0002`, reglas 1 a 4 con pruebas)
 
 > Diagramas editables: `er-postgres.mmd` y `estados-reserva.mmd` (Mermaid). Imágenes: `er-postgres.png` y `estados-reserva.png`.
 
@@ -185,11 +185,11 @@ Estados: `borrador`, `confirmada`, `en_juego`, `completada`, `liberada_espera`, 
 
 | Estado actual | Evento | Siguiente | Regla | Quién lo dispara |
 |---|---|---|---|---|
-| borrador | Pago aprobado (y quórum si es partido abierto) | confirmada | 2 | Backend |
-| borrador | `expira_en` vencido | expirada | Un turno, una reserva | CronJob |
-| confirmada | Check-in en puerta | en_juego | 3 | Administrador |
+| borrador | Pago del depósito aprobado | confirmada | 2 | Backend (el organizador) |
+| borrador | `expira_en` vencido, o cancelación del borrador | expirada | Un turno, una reserva | CronJob / Jugador |
+| confirmada | Check-in en puerta (desde 10 min antes del inicio) | en_juego | 3 | Administrador |
 | en_juego | Fin del turno | completada | Actualiza ranking | CronJob |
-| confirmada | Cancelación del jugador o no-show | liberada_espera | 1 | Jugador / CronJob |
+| confirmada | Cancelación del jugador o no-show (15 min sin check-in) | liberada_espera | 1 | Jugador / CronJob |
 | confirmada | Quórum incompleto 2 h antes | liberada_espera | 2 | CronJob |
 | liberada_espera | Alguien en espera toma el turno | reasignada | 4 | Backend |
 
@@ -199,9 +199,9 @@ Al reasignar, la reserva original queda en `reasignada` (terminal) y se crea una
 
 | Regla | Dónde vive | Verificación |
 |---|---|---|
-| 1. Cancelación progresiva | Servicio de cancelación (calcula 0/50/100 % del depósito); si <1 h, fija `usuario.bloqueado_hasta = ahora + 7 días` (aplica a horario estelar: **18:00 a 22:00, lunes a viernes**) | Pruebas con cancelación a 5 h, 3 h y 30 min |
-| 2. Quórum | CronJob a 2 h del inicio: todos confirmados y pago hecho, o libera a espera | Partido con un jugador sin confirmar |
-| 3. Luz condicional | Endpoint de token: solo si `confirmada` y hora dentro de ±10 min; evento a bitácora | Token antes, durante y después de la ventana |
+| 1. Cancelación progresiva | Servicio de cancelación (calcula 0/50/100 % del depósito: 4 h o más = 0 %, de 1 h a menos de 4 h = 50 %, menos de 1 h = 100 %); si <1 h, fija `usuario.bloqueado_hasta = ahora + 7 días` (aplica a horario estelar: **18:00 a 22:00, lunes a viernes**, hora de Morelia). Si cancela el administrador no hay penalización | Pruebas con cancelación a 5 h, 3 h y 30 min |
+| 2. Quórum | CronJob a 2 h del inicio: cupo completo del deporte (pádel 4, tenis 2, fútbol 7 14) y 100 % de los jugadores con asistencia confirmada y pago simulado, o libera a espera. El organizador paga el depósito para confirmar el borrador; el quórum se revisa después, 2 h antes | Partido con un jugador sin confirmar |
+| 3. Luz condicional | Endpoint de token: solo si `confirmada` y hora dentro de ±10 min del inicio; el token vence al terminar el turno; evento a bitácora | Token antes, durante y después de la ventana |
 | 4. Un turno, una reserva | Restricción EXCLUDE en PostgreSQL | Dos inserciones traslapadas: la segunda falla |
 
 ## 6. Consistencia entre motores (patrón outbox)
@@ -225,3 +225,18 @@ Al reasignar, la reserva original queda en `reasignada` (terminal) y se crea una
 | reserva_material, pago, reserva_jugador | derivados de las reservas |
 
 Total de registros de negocio: más de 100. El script será idempotente (se puede correr varias veces sin duplicar).
+
+
+## 8. Decisiones de implementación del backend (v0.3)
+
+| Tema | Decisión |
+|---|---|
+| Turnos | Duración de 1 a 3 horas, que empiezan en punto; reservas con máximo 60 días de anticipación |
+| Partido abierto | Se crea con al menos 3 h de anticipación para dejar tiempo de juntar al grupo antes del corte de 2 h |
+| Cupo | Pádel 4, tenis 2, fútbol 7 14 jugadores |
+| Pago | Pasarela simulada: el pago del depósito se registra en `pago`; la confirmación de un jugador invitado marca `reserva_jugador.confirmado` |
+| Reasignación | Solo cuando alguien espera **exactamente** ese turno (misma cancha, mismo periodo); el primero en llegar tiene prioridad |
+| Bajas | Lógicas (`activa`/`activo`). La cuenta de la aplicación solo tiene `DELETE` en `lista_espera`, `reserva_jugador` y `reserva_material` (migración 0002) |
+| Ficha de cancha | Se guarda directamente en MongoDB (`PUT /api/canchas/{id}/ficha`); si Mongo no responde, esa operación devuelve 503 y el resto de la API sigue funcionando |
+| Tareas | `python -m app.tareas expirar \| publicar \| quorum \| no-show \| finalizar \| reconciliar` (CronJobs) |
+| Reloj | Todo el negocio usa un único reloj (`app/tiempo.py`), lo que permite probar las reglas por horas de anticipación sin esperar |

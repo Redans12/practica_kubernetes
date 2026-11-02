@@ -1,0 +1,355 @@
+# Tareas programadas del backend (reglas 1 y 2, expiración de borradores, outbox hacia MongoDB).
+# Mismas protecciones que el backend: sin root, sin escritura en disco, sin capacidades, con límites.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tarea-expirar
+  labels: {app: canchas-tareas}
+  annotations:
+    descripcion: "Borradores vencidos pasan a expirada (cada minuto)"
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid          # nunca dos corridas de la misma tarea a la vez
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels: {app: canchas-tareas, tier: app}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: canchas-backend
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: tarea
+              image: canchas-backend
+              command: ["python", "-m", "app.tareas", "expirar"]
+              envFrom:
+                - configMapRef: {name: canchas-config}
+              env:
+                - name: DB_PASSWORD
+                  valueFrom: {secretKeyRef: {name: postgres-secret, key: APP_PASSWORD}}
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://canchas_app:$(DB_PASSWORD)@postgres:5432/canchas
+                - name: MONGO_PASSWORD
+                  valueFrom: {secretKeyRef: {name: mongo-secret, key: MONGO_APP_PASSWORD}}
+                - name: MONGO_URL
+                  value: mongodb://canchas_app:$(MONGO_PASSWORD)@mongo:27017/canchas?authSource=canchas
+                - name: JWT_SECRET
+                  valueFrom: {secretKeyRef: {name: app-secret, key: JWT_SECRET}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits: {cpu: 300m, memory: 192Mi}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tarea-publicar
+  labels: {app: canchas-tareas}
+  annotations:
+    descripcion: "Outbox de PostgreSQL a la bitácora de MongoDB (cada minuto)"
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid          # nunca dos corridas de la misma tarea a la vez
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels: {app: canchas-tareas, tier: app}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: canchas-backend
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: tarea
+              image: canchas-backend
+              command: ["python", "-m", "app.tareas", "publicar"]
+              envFrom:
+                - configMapRef: {name: canchas-config}
+              env:
+                - name: DB_PASSWORD
+                  valueFrom: {secretKeyRef: {name: postgres-secret, key: APP_PASSWORD}}
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://canchas_app:$(DB_PASSWORD)@postgres:5432/canchas
+                - name: MONGO_PASSWORD
+                  valueFrom: {secretKeyRef: {name: mongo-secret, key: MONGO_APP_PASSWORD}}
+                - name: MONGO_URL
+                  value: mongodb://canchas_app:$(MONGO_PASSWORD)@mongo:27017/canchas?authSource=canchas
+                - name: JWT_SECRET
+                  valueFrom: {secretKeyRef: {name: app-secret, key: JWT_SECRET}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits: {cpu: 300m, memory: 192Mi}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tarea-quorum
+  labels: {app: canchas-tareas}
+  annotations:
+    descripcion: "Regla 2: partidos abiertos sin quórum a 2 h se liberan (cada 5 min)"
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid          # nunca dos corridas de la misma tarea a la vez
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels: {app: canchas-tareas, tier: app}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: canchas-backend
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: tarea
+              image: canchas-backend
+              command: ["python", "-m", "app.tareas", "quorum"]
+              envFrom:
+                - configMapRef: {name: canchas-config}
+              env:
+                - name: DB_PASSWORD
+                  valueFrom: {secretKeyRef: {name: postgres-secret, key: APP_PASSWORD}}
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://canchas_app:$(DB_PASSWORD)@postgres:5432/canchas
+                - name: MONGO_PASSWORD
+                  valueFrom: {secretKeyRef: {name: mongo-secret, key: MONGO_APP_PASSWORD}}
+                - name: MONGO_URL
+                  value: mongodb://canchas_app:$(MONGO_PASSWORD)@mongo:27017/canchas?authSource=canchas
+                - name: JWT_SECRET
+                  valueFrom: {secretKeyRef: {name: app-secret, key: JWT_SECRET}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits: {cpu: 300m, memory: 192Mi}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tarea-no-show
+  labels: {app: canchas-tareas}
+  annotations:
+    descripcion: "Regla 1: sin check-in 15 min después del inicio (cada 5 min)"
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid          # nunca dos corridas de la misma tarea a la vez
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels: {app: canchas-tareas, tier: app}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: canchas-backend
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: tarea
+              image: canchas-backend
+              command: ["python", "-m", "app.tareas", "no-show"]
+              envFrom:
+                - configMapRef: {name: canchas-config}
+              env:
+                - name: DB_PASSWORD
+                  valueFrom: {secretKeyRef: {name: postgres-secret, key: APP_PASSWORD}}
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://canchas_app:$(DB_PASSWORD)@postgres:5432/canchas
+                - name: MONGO_PASSWORD
+                  valueFrom: {secretKeyRef: {name: mongo-secret, key: MONGO_APP_PASSWORD}}
+                - name: MONGO_URL
+                  value: mongodb://canchas_app:$(MONGO_PASSWORD)@mongo:27017/canchas?authSource=canchas
+                - name: JWT_SECRET
+                  valueFrom: {secretKeyRef: {name: app-secret, key: JWT_SECRET}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits: {cpu: 300m, memory: 192Mi}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tarea-finalizar
+  labels: {app: canchas-tareas}
+  annotations:
+    descripcion: "Turnos en juego terminados pasan a completada y suman ranking (cada 5 min)"
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid          # nunca dos corridas de la misma tarea a la vez
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels: {app: canchas-tareas, tier: app}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: canchas-backend
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: tarea
+              image: canchas-backend
+              command: ["python", "-m", "app.tareas", "finalizar"]
+              envFrom:
+                - configMapRef: {name: canchas-config}
+              env:
+                - name: DB_PASSWORD
+                  valueFrom: {secretKeyRef: {name: postgres-secret, key: APP_PASSWORD}}
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://canchas_app:$(DB_PASSWORD)@postgres:5432/canchas
+                - name: MONGO_PASSWORD
+                  valueFrom: {secretKeyRef: {name: mongo-secret, key: MONGO_APP_PASSWORD}}
+                - name: MONGO_URL
+                  value: mongodb://canchas_app:$(MONGO_PASSWORD)@mongo:27017/canchas?authSource=canchas
+                - name: JWT_SECRET
+                  valueFrom: {secretKeyRef: {name: app-secret, key: JWT_SECRET}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits: {cpu: 300m, memory: 192Mi}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tarea-reconciliar
+  labels: {app: canchas-tareas}
+  annotations:
+    descripcion: "Compara eventos de PostgreSQL contra MongoDB y reporta faltantes (cada hora)"
+spec:
+  schedule: "17 * * * *"
+  concurrencyPolicy: Forbid          # nunca dos corridas de la misma tarea a la vez
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels: {app: canchas-tareas, tier: app}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: canchas-backend
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: tarea
+              image: canchas-backend
+              command: ["python", "-m", "app.tareas", "reconciliar"]
+              envFrom:
+                - configMapRef: {name: canchas-config}
+              env:
+                - name: DB_PASSWORD
+                  valueFrom: {secretKeyRef: {name: postgres-secret, key: APP_PASSWORD}}
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://canchas_app:$(DB_PASSWORD)@postgres:5432/canchas
+                - name: MONGO_PASSWORD
+                  valueFrom: {secretKeyRef: {name: mongo-secret, key: MONGO_APP_PASSWORD}}
+                - name: MONGO_URL
+                  value: mongodb://canchas_app:$(MONGO_PASSWORD)@mongo:27017/canchas?authSource=canchas
+                - name: JWT_SECRET
+                  valueFrom: {secretKeyRef: {name: app-secret, key: JWT_SECRET}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits: {cpu: 300m, memory: 192Mi}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: tmp
+              emptyDir: {}

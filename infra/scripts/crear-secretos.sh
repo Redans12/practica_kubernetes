@@ -32,4 +32,8 @@ crear mongo-secret \
 crear app-secret \
   --from-literal=JWT_SECRET="$(openssl rand -hex 32)"
 
+# Contraseña de las cuentas sintéticas de demostración (admin@ejemplo.test, jugadorNN@ejemplo.test)
+crear semilla-secret \
+  --from-literal=SEED_PASSWORD="$(openssl rand -hex 8)"
+
 echo "Secretos listos en el namespace $NS (valores no mostrados)."

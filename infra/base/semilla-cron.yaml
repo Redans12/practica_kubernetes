@@ -1,0 +1,58 @@
+# Datos de demostración (>100 registros). NO se ejecuta sola: está suspendida y se lanza a mano con
+#   kubectl -n canchas create job semilla-1 --from=cronjob/semilla
+# Es idempotente: si ya se aplicó, no duplica nada.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: semilla
+  labels: {app: canchas-semilla}
+spec:
+  schedule: "0 0 1 1 *"
+  suspend: true
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels: {app: canchas-semilla, tier: app}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: canchas-backend
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: semilla
+              image: canchas-backend
+              command: ["python", "-m", "app.semilla"]
+              envFrom:
+                - configMapRef: {name: canchas-config}
+              env:
+                - name: DB_PASSWORD
+                  valueFrom: {secretKeyRef: {name: postgres-secret, key: APP_PASSWORD}}
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://canchas_app:$(DB_PASSWORD)@postgres:5432/canchas
+                - name: MONGO_PASSWORD
+                  valueFrom: {secretKeyRef: {name: mongo-secret, key: MONGO_APP_PASSWORD}}
+                - name: MONGO_URL
+                  value: mongodb://canchas_app:$(MONGO_PASSWORD)@mongo:27017/canchas?authSource=canchas
+                - name: JWT_SECRET
+                  valueFrom: {secretKeyRef: {name: app-secret, key: JWT_SECRET}}
+                - name: SEED_PASSWORD
+                  valueFrom: {secretKeyRef: {name: semilla-secret, key: SEED_PASSWORD}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              resources:
+                requests: {cpu: 50m, memory: 96Mi}
+                limits: {cpu: 500m, memory: 256Mi}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: tmp
+              emptyDir: {}

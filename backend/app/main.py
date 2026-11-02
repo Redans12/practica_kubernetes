@@ -5,10 +5,12 @@ import time
 import uuid
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import auth, health
+from app.routers import auth, canchas, health, materiales, reportes, reservas
+from app.servicios.errores import ReglaDeNegocio
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("canchas")
@@ -16,7 +18,7 @@ REPLICA = socket.gethostname()
 
 settings = get_settings()
 app = FastAPI(
-    title="Gestión de canchas deportivas", version="0.1.0",
+    title="Gestión de canchas deportivas", version="0.2.0",
     docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None,
 )
 
@@ -28,6 +30,11 @@ if origenes:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
     )
+
+
+@app.exception_handler(ReglaDeNegocio)
+async def regla_de_negocio(_: Request, exc: ReglaDeNegocio):
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
 
 
 @app.middleware("http")
@@ -49,4 +56,5 @@ async def registrar_peticion(request: Request, call_next):
 # /health/* lo usan las sondas de Kubernetes (no se publica por el Ingress).
 # Todo lo demás vive bajo /api, que es lo único que expone el Ingress.
 app.include_router(health.router)
-app.include_router(auth.router, prefix="/api")
+for r in (auth, canchas, materiales, reservas, reportes):
+    app.include_router(r.router, prefix="/api")

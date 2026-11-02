@@ -26,3 +26,8 @@ def mongo_ping() -> bool:
         return True
     except PyMongoError:
         return False
+
+
+def get_mdb():
+    """Dependencia de FastAPI para Mongo (las pruebas la sustituyen por una base simulada)."""
+    return get_mongo_db()

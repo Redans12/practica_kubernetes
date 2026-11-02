@@ -9,3 +9,5 @@ resources:
   - backend.yaml
   - migracion-job.yaml
   - ingress.yaml
+  - tareas-cron.yaml
+  - semilla-cron.yaml
